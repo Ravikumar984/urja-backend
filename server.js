@@ -13,26 +13,25 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Helper to retrieve active slabs
-function getActiveTariffSlabs() {
-  return db.prepare('SELECT * FROM tariff_slabs ORDER BY min_units ASC').all();
+// Helper to retrieve active slabs (Updated for MySQL)
+async function getActiveTariffSlabs() {
+  const [rows] = await db.execute('SELECT * FROM tariff_slabs ORDER BY min_units ASC');
+  return rows;
 }
 
 // -------------------------------------------------------------
 // 1. Session & Overview APIs
 // -------------------------------------------------------------
-app.post('/api/session/init', (req, res) => {
+app.post('/api/session/init', async (req, res) => {
   try {
     const { property_name = 'My Home', property_type = 'Household', state_region = 'Bihar', sanctioned_load_kw = 2.0 } = req.body;
     const sessionId = crypto.randomUUID();
 
-    const stmt = db.prepare(`
+    await db.execute(`
       INSERT INTO audit_sessions (id, property_name, property_type, state_region, sanctioned_load_kw)
       VALUES (?, ?, ?, ?, ?)
-    `);
-    stmt.run(sessionId, property_name, property_type, state_region, sanctioned_load_kw);
+    `, [sessionId, property_name, property_type, state_region, sanctioned_load_kw]);
 
-    // Prepopulate with realistic default household sample data (from project proposal)
     const defaultAppliances = [
       { name: 'LED Bulbs', category: 'Lighting', qty: 5, wattage: 9, hours: 6 },
       { name: 'Ceiling Fans', category: 'Cooling', qty: 3, wattage: 75, hours: 10 },
@@ -40,20 +39,17 @@ app.post('/api/session/init', (req, res) => {
       { name: 'Refrigerator (Frost-Free)', category: 'Refrigeration', qty: 1, wattage: 150, hours: 8 }
     ];
 
-    const insertAppliance = db.prepare(`
-      INSERT INTO appliances (session_id, appliance_name, category, quantity, wattage, daily_hours, days_per_month)
-      VALUES (?, ?, ?, ?, ?, ?, 30)
-    `);
-
     for (const app of defaultAppliances) {
-      insertAppliance.run(sessionId, app.name, app.category, app.qty, app.wattage, app.hours);
+      await db.execute(`
+        INSERT INTO appliances (session_id, appliance_name, category, quantity, wattage, daily_hours, days_per_month)
+        VALUES (?, ?, ?, ?, ?, ?, 30)
+      `, [sessionId, app.name, app.category, app.qty, app.wattage, app.hours]);
     }
 
-    // Default sample bill
-    db.prepare(`
+    await db.execute(`
       INSERT INTO bill_records (session_id, billing_month, actual_units_kwh, actual_bill_amount)
       VALUES (?, 'Current Month', 145.0, 1160.0)
-    `).run(sessionId);
+    `, [sessionId]);
 
     res.json({ success: true, sessionId });
   } catch (err) {
@@ -64,33 +60,33 @@ app.post('/api/session/init', (req, res) => {
 // -------------------------------------------------------------
 // 2. Bill Management APIs
 // -------------------------------------------------------------
-app.get('/api/bill/:sessionId', (req, res) => {
+app.get('/api/bill/:sessionId', async (req, res) => {
   try {
-    const bill = db.prepare('SELECT * FROM bill_records WHERE session_id = ? ORDER BY id DESC LIMIT 1').get(req.params.sessionId);
-    res.json(bill || null);
+    const [rows] = await db.execute('SELECT * FROM bill_records WHERE session_id = ? ORDER BY id DESC LIMIT 1', [req.params.sessionId]);
+    res.json(rows[0] || null);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/bill/:sessionId', (req, res) => {
+app.post('/api/bill/:sessionId', async (req, res) => {
   try {
     const { billing_month, actual_units_kwh, actual_bill_amount } = req.body;
     const sessionId = req.params.sessionId;
 
-    const existing = db.prepare('SELECT id FROM bill_records WHERE session_id = ?').get(sessionId);
+    const [existing] = await db.execute('SELECT id FROM bill_records WHERE session_id = ?', [sessionId]);
 
-    if (existing) {
-      db.prepare(`
+    if (existing.length > 0) {
+      await db.execute(`
         UPDATE bill_records 
         SET billing_month = ?, actual_units_kwh = ?, actual_bill_amount = ?
         WHERE session_id = ?
-      `).run(billing_month || 'Current Month', Number(actual_units_kwh), Number(actual_bill_amount), sessionId);
+      `, [billing_month || 'Current Month', Number(actual_units_kwh), Number(actual_bill_amount), sessionId]);
     } else {
-      db.prepare(`
+      await db.execute(`
         INSERT INTO bill_records (session_id, billing_month, actual_units_kwh, actual_bill_amount)
         VALUES (?, ?, ?, ?)
-      `).run(sessionId, billing_month || 'Current Month', Number(actual_units_kwh), Number(actual_bill_amount));
+      `, [sessionId, billing_month || 'Current Month', Number(actual_units_kwh), Number(actual_bill_amount)]);
     }
 
     res.json({ success: true, message: 'Bill record updated' });
@@ -102,9 +98,9 @@ app.post('/api/bill/:sessionId', (req, res) => {
 // -------------------------------------------------------------
 // 3. Appliance Inventory APIs
 // -------------------------------------------------------------
-app.get('/api/appliances/:sessionId', (req, res) => {
+app.get('/api/appliances/:sessionId', async (req, res) => {
   try {
-    const appliances = db.prepare('SELECT * FROM appliances WHERE session_id = ? ORDER BY id ASC').all(req.params.sessionId);
+    const [appliances] = await db.execute('SELECT * FROM appliances WHERE session_id = ? ORDER BY id ASC', [req.params.sessionId]);
     const enriched = appliances.map(app => {
       const energy = calculateApplianceEnergy(app);
       return { ...app, ...energy };
@@ -115,28 +111,28 @@ app.get('/api/appliances/:sessionId', (req, res) => {
   }
 });
 
-app.post('/api/appliances/:sessionId', (req, res) => {
+app.post('/api/appliances/:sessionId', async (req, res) => {
   try {
     const { appliance_name, category, quantity, wattage, daily_hours, days_per_month = 30 } = req.body;
-    const result = db.prepare(`
+    const [result] = await db.execute(`
       INSERT INTO appliances (session_id, appliance_name, category, quantity, wattage, daily_hours, days_per_month)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(req.params.sessionId, appliance_name, category, Number(quantity), Number(wattage), Number(daily_hours), Number(days_per_month));
+    `, [req.params.sessionId, appliance_name, category, Number(quantity), Number(wattage), Number(daily_hours), Number(days_per_month)]);
 
-    res.json({ success: true, id: result.lastInsertRowid });
+    res.json({ success: true, id: result.insertId });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.put('/api/appliances/:id', (req, res) => {
+app.put('/api/appliances/:id', async (req, res) => {
   try {
     const { appliance_name, category, quantity, wattage, daily_hours, days_per_month = 30 } = req.body;
-    db.prepare(`
+    await db.execute(`
       UPDATE appliances 
       SET appliance_name = ?, category = ?, quantity = ?, wattage = ?, daily_hours = ?, days_per_month = ?
       WHERE id = ?
-    `).run(appliance_name, category, Number(quantity), Number(wattage), Number(daily_hours), Number(days_per_month), req.params.id);
+    `, [appliance_name, category, Number(quantity), Number(wattage), Number(daily_hours), Number(days_per_month), req.params.id]);
 
     res.json({ success: true });
   } catch (err) {
@@ -144,9 +140,9 @@ app.put('/api/appliances/:id', (req, res) => {
   }
 });
 
-app.delete('/api/appliances/:id', (req, res) => {
+app.delete('/api/appliances/:id', async (req, res) => {
   try {
-    db.prepare('DELETE FROM appliances WHERE id = ?').run(req.params.id);
+    await db.execute('DELETE FROM appliances WHERE id = ?', [req.params.id]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -156,15 +152,18 @@ app.delete('/api/appliances/:id', (req, res) => {
 // -------------------------------------------------------------
 // 4. Audit Engine & Dashboard Summary API
 // -------------------------------------------------------------
-app.get('/api/audit-summary/:sessionId', (req, res) => {
+app.get('/api/audit-summary/:sessionId', async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const session = db.prepare('SELECT * FROM audit_sessions WHERE id = ?').get(sessionId);
+    const [sessionRows] = await db.execute('SELECT * FROM audit_sessions WHERE id = ?', [sessionId]);
+    const session = sessionRows[0];
     if (!session) return res.status(404).json({ error: 'Session not found' });
 
-    const appliances = db.prepare('SELECT * FROM appliances WHERE session_id = ?').all(sessionId);
-    const billRecord = db.prepare('SELECT * FROM bill_records WHERE session_id = ? ORDER BY id DESC LIMIT 1').get(sessionId);
-    const slabs = getActiveTariffSlabs();
+    const [appliances] = await db.execute('SELECT * FROM appliances WHERE session_id = ?', [sessionId]);
+    const [billRows] = await db.execute('SELECT * FROM bill_records WHERE session_id = ? ORDER BY id DESC LIMIT 1', [sessionId]);
+    const billRecord = billRows[0];
+    
+    const slabs = await getActiveTariffSlabs();
 
     let totalCalculatedDailyKwh = 0;
     let totalCalculatedMonthlyKwh = 0;
@@ -176,7 +175,6 @@ app.get('/api/audit-summary/:sessionId', (req, res) => {
       return { ...app, ...calc };
     });
 
-    // Add % share of total consumption
     const applianceBreakdown = enrichedAppliances.map(app => ({
       ...app,
       percentageShare: totalCalculatedMonthlyKwh > 0 
@@ -184,7 +182,6 @@ app.get('/api/audit-summary/:sessionId', (req, res) => {
         : 0
     })).sort((a, b) => b.monthlyKwh - a.monthlyKwh);
 
-    // Grouping by Category
     const categoryBreakdown = {};
     applianceBreakdown.forEach(app => {
       if (!categoryBreakdown[app.category]) {
@@ -200,16 +197,13 @@ app.get('/api/audit-summary/:sessionId', (req, res) => {
         : 0;
     });
 
-    // Tariff Cost for Calculated vs Actual
     const calculatedBillTariff = calculateTariffCost(totalCalculatedMonthlyKwh, slabs, session.sanctioned_load_kw);
     const actualUnits = billRecord ? billRecord.actual_units_kwh : totalCalculatedMonthlyKwh;
     const actualBillTariff = calculateTariffCost(actualUnits, slabs, session.sanctioned_load_kw);
 
-    // Discrepancy & Drain
     const unaccountedUnits = Number(Math.max(0, actualUnits - totalCalculatedMonthlyKwh).toFixed(2));
     const unaccountedCost = Number((unaccountedUnits * calculatedBillTariff.marginalRatePerUnit).toFixed(2));
 
-    // Recommendations Engine
     const recommendations = generateAuditRecommendations({
       appliances: enrichedAppliances,
       billRecord,
@@ -266,9 +260,9 @@ app.post('/api/simulator/calculate', (req, res) => {
 // -------------------------------------------------------------
 // 6. Tariffs Metadata API
 // -------------------------------------------------------------
-app.get('/api/tariffs', (req, res) => {
+app.get('/api/tariffs', async (req, res) => {
   try {
-    const slabs = getActiveTariffSlabs();
+    const slabs = await getActiveTariffSlabs();
     res.json(slabs);
   } catch (err) {
     res.status(500).json({ error: err.message });
