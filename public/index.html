@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UrjaAudit - Electricity Savings & Energy Audit Assistant</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand-group">
+        <div class="brand-logo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+        </div>
+        <div>
+          <h1 class="brand-title">Urja<span>Audit</span></h1>
+          <p class="brand-tagline">Electricity Savings & Energy Audit Assistant</p>
+        </div>
+      </div>
+
+      <div class="header-meta">
+        <div class="badge-tag">
+          <span class="status-indicator"></span>
+          <span id="session-property-name">Household (Bihar)</span>
+        </div>
+        <div class="tariff-tag">Tariff: SBPDCL DS-II</div>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <nav class="screen-tabs">
+      <div class="tabs-container">
+        <button class="nav-tab active" data-screen="screen-dashboard">
+          <span class="tab-icon">📊</span>
+          <span>1. Dashboard</span>
+        </button>
+        <button class="nav-tab" data-screen="screen-bill">
+          <span class="tab-icon">📄</span>
+          <span>2. Bill & Tariff</span>
+        </button>
+        <button class="nav-tab" data-screen="screen-appliances">
+          <span class="tab-icon">🔌</span>
+          <span>3. Appliance Inventory</span>
+        </button>
+        <button class="nav-tab" data-screen="screen-simulator">
+          <span class="tab-icon">🎛️</span>
+          <span>4. Savings Simulator</span>
+        </button>
+        <button class="nav-tab" data-screen="screen-report">
+          <span class="tab-icon">📑</span>
+          <span>5. Audit Report</span>
+        </button>
+      </div>
+    </nav>
+  </header>
+
+  <!-- Main Content Body -->
+  <main class="app-content">
+
+    <!-- ========================================== -->
+    <!-- SCREEN 1: AUDIT DASHBOARD                  -->
+    <!-- ========================================== -->
+    <section id="screen-dashboard" class="screen-panel active">
+      <div class="screen-header">
+        <div>
+          <h2 class="screen-title">Energy Consumption & Insights Dashboard</h2>
+          <p class="screen-subtitle">Real-time comparison between measured meter billing and appliance load inventory.</p>
+        </div>
+        <div class="header-actions">
+          <button class="btn btn-outline" id="btn-refresh-dashboard">🔄 Recalculate</button>
+          <button class="btn btn-primary" onclick="switchScreen('screen-report')">📥 Generate PDF Report</button>
+        </div>
+      </div>
+
+      <!-- KPI Summary Cards -->
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-header">
+            <span class="kpi-label">Calculated Monthly Energy</span>
+            <span class="kpi-badge badge-neutral">Inventory</span>
+          </div>
+          <div class="kpi-value" id="kpi-calc-kwh">0.0 <span class="unit">kWh</span></div>
+          <div class="kpi-footer">
+            <span>Daily Average: <strong id="kpi-calc-daily">0.00 kWh/day</strong></span>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-header">
+            <span class="kpi-label">Actual Metered Energy</span>
+            <span class="kpi-badge badge-info">Utility Bill</span>
+          </div>
+          <div class="kpi-value" id="kpi-bill-kwh">0.0 <span class="unit">kWh</span></div>
+          <div class="kpi-footer">
+            <span>Actual Bill: <strong id="kpi-bill-cost">₹0.00</strong></span>
+          </div>
+        </div>
+
+        <div class="kpi-card" id="kpi-drain-card">
+          <div class="kpi-header">
+            <span class="kpi-label">Unaccounted / Phantom Drain</span>
+            <span class="kpi-badge badge-warning" id="kpi-drain-badge">Standby Loss</span>
+          </div>
+          <div class="kpi-value warning-text" id="kpi-drain-kwh">0.0 <span class="unit">kWh</span></div>
+          <div class="kpi-footer">
+            <span>Hidden Drain Cost: <strong id="kpi-drain-cost">₹0.00/mo</strong></span>
+          </div>
+        </div>
+
+        <div class="kpi-card highlight-card">
+          <div class="kpi-header">
+            <span class="kpi-label">Potential Monthly Savings</span>
+            <span class="kpi-badge badge-success">Optimizable</span>
+          </div>
+          <div class="kpi-value success-text" id="kpi-savings-cost">₹0.00 <span class="unit">/mo</span></div>
+          <div class="kpi-footer">
+            <span>Annual Reduction: <strong id="kpi-savings-annual">₹0.00/yr</strong></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Energy Flow & Breakdown Visuals -->
+      <div class="dashboard-grid">
+        <div class="panel-card chart-panel">
+          <div class="panel-header">
+            <h3 class="panel-title">Energy Consumption by Appliance Category</h3>
+            <span class="panel-tag">Load Breakdown</span>
+          </div>
+          <div class="chart-content">
+            <div id="category-chart-container" class="svg-chart-container"></div>
+            <div id="category-legend" class="category-legend-list"></div>
+          </div>
+        </div>
+
+        <div class="panel-card">
+          <div class="panel-header">
+            <h3 class="panel-title">Top Energy-Consuming Appliances</h3>
+            <span class="panel-tag">Pareto Analysis</span>
+          </div>
+          <div class="top-appliances-list" id="top-appliances-list">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Action Recommendations Preview -->
+      <div class="panel-card mt-6">
+        <div class="panel-header">
+          <h3 class="panel-title">Priority Audit Insights & Action Plan</h3>
+          <span class="panel-tag">Rule Engine</span>
+        </div>
+        <div class="recommendations-container" id="dashboard-recommendations-list">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- SCREEN 2: BILL & TARIFF MANAGER            -->
+    <!-- ========================================== -->
+    <section id="screen-bill" class="screen-panel">
+      <div class="screen-header">
+        <div>
+          <h2 class="screen-title">Electricity Bill & Discom Tariff Slabs</h2>
+          <p class="screen-subtitle">Input your monthly electricity bill parameters and configure tier structures.</p>
+        </div>
+      </div>
+
+      <div class="form-layout-grid">
+        <!-- Bill Input Form -->
+        <div class="panel-card">
+          <div class="panel-header">
+            <h3 class="panel-title">Monthly Utility Bill Parameters</h3>
+          </div>
+          <form id="form-bill" class="standard-form">
+            <div class="form-group">
+              <label for="bill-month">Billing Period / Month</label>
+              <input type="text" id="bill-month" class="form-input" value="October 2024 (30 Days)" required>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="actual-units">Total Units Billed (kWh)</label>
+                <input type="number" step="0.1" id="actual-units" class="form-input" value="145" required>
+                <small class="form-hint">Refer to "Current Reading - Previous Reading" on bill</small>
+              </div>
+
+              <div class="form-group">
+                <label for="actual-amount">Total Billed Amount (₹)</label>
+                <input type="number" step="0.5" id="actual-amount" class="form-input" value="1160" required>
+                <small class="form-hint">Total net payable amount including duty</small>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="sanctioned-load">Sanctioned Load (kW)</label>
+                <input type="number" step="0.5" id="sanctioned-load" class="form-input" value="2.0" required>
+              </div>
+
+              <div class="form-group">
+                <label for="discom-preset">Utility / Discom Region</label>
+                <select id="discom-preset" class="form-select">
+                  <option value="SBPDCL_NBPDCL">SBPDCL / NBPDCL (Bihar Domestic DS-II)</option>
+                  <option value="STANDARD_FLAT">Standard National Flat Rate (₹8.00/kWh)</option>
+                </select>
+              </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary w-full mt-4">💾 Save & Recalculate Bill</button>
+          </form>
+        </div>
+
+        <!-- Tariff Slab Breakdown View -->
+        <div class="panel-card">
+          <div class="panel-header">
+            <h3 class="panel-title">Applied Tariff Tier Structure</h3>
+            <span class="panel-tag">SBPDCL Slabs</span>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table" id="tariff-slabs-table">
+              <thead>
+                <tr>
+                  <th>Slab Range</th>
+                  <th>Rate (₹/unit)</th>
+                  <th>Units in Bracket</th>
+                  <th>Cost (₹)</th>
+                </tr>
+              </thead>
+              <tbody id="tariff-slabs-tbody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+
+          <div class="tariff-breakdown-summary" id="tariff-summary-box">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- SCREEN 3: APPLIANCE INVENTORY & AUDIT      -->
+    <!-- ========================================== -->
+    <section id="screen-appliances" class="screen-panel">
+      <div class="screen-header">
+        <div>
+          <h2 class="screen-title">Appliance Inventory & Load Profile</h2>
+          <p class="screen-subtitle">List and audit every connected electrical load with quantity, wattage, and daily operating hours.</p>
+        </div>
+        <div>
+          <button class="btn btn-outline" id="btn-load-bihar-example">⚡ Load Bihar Household Example</button>
+        </div>
+      </div>
+
+      <!-- Add Appliance Bar -->
+      <div class="panel-card mb-6">
+        <form id="form-add-appliance" class="quick-add-grid">
+          <div class="form-group">
+            <label>Appliance Name / Preset</label>
+            <input type="text" id="app-name" class="form-input" placeholder="e.g. Ceiling Fan, Geyser" required list="appliance-presets">
+            <datalist id="appliance-presets">
+              <option value="LED Bulb (9W)">
+              <option value="Ceiling Fan (75W Induction)">
+              <option value="BLDC Ceiling Fan (28W)">
+              <option value="Television 43 inch (100W)">
+              <option value="Refrigerator 190L (150W Avg)">
+              <option value="Split Air Conditioner 1.5T (1500W)">
+              <option value="Immersion Water Heater (1500W)">
+              <option value="Washing Machine (400W)">
+              <option value="Water Pump 1HP (746W)">
+            </datalist>
+          </div>
+
+          <div class="form-group">
+            <label>Category</label>
+            <select id="app-category" class="form-select" required>
+              <option value="Lighting">Lighting</option>
+              <option value="Cooling">Cooling</option>
+              <option value="Refrigeration">Refrigeration</option>
+              <option value="Entertainment">Entertainment</option>
+              <option value="Heavy Motor">Heavy Motor</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Quantity</label>
+            <input type="number" id="app-qty" class="form-input" min="1" max="100" value="1" required>
+          </div>
+
+          <div class="form-group">
+            <label>Power (Watts)</label>
+            <input type="number" id="app-wattage" class="form-input" min="1" step="0.5" placeholder="e.g. 75" required>
+          </div>
+
+          <div class="form-group">
+            <label>Daily Usage (Hours)</label>
+            <input type="number" id="app-hours" class="form-input" min="0.1" max="24" step="0.1" value="6" required>
+          </div>
+
+          <div class="form-group button-align">
+            <button type="submit" class="btn btn-primary w-full">+ Add Appliance</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Appliance Table -->
+      <div class="panel-card">
+        <div class="table-responsive">
+          <table class="data-table" id="appliances-table">
+            <thead>
+              <tr>
+                <th>Appliance Name</th>
+                <th>Category</th>
+                <th>Qty</th>
+                <th>Power (W)</th>
+                <th>Daily Usage</th>
+                <th>Daily (kWh)</th>
+                <th>Monthly (kWh)</th>
+                <th>% of Total</th>
+                <th>Est. Cost (₹)</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="appliances-tbody">
+              <!-- Dynamically populated -->
+            </tbody>
+            <tfoot id="appliances-tfoot">
+              <!-- Total row -->
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- SCREEN 4: SAVINGS SIMULATOR & RETROFIT ROI -->
+    <!-- ========================================== -->
+    <section id="screen-simulator" class="screen-panel">
+      <div class="screen-header">
+        <div>
+          <h2 class="screen-title">Savings Simulator & Retrofit ROI Calculator</h2>
+          <p class="screen-subtitle">Simulate usage reductions and calculate payback periods for energy-efficient replacements.</p>
+        </div>
+      </div>
+
+      <div class="simulator-layout">
+        <!-- Interactive Usage Reduction Sandbox -->
+        <div class="panel-card">
+          <div class="panel-header">
+            <h3 class="panel-title">Interactive Usage Reduction Simulator</h3>
+            <span class="panel-tag">Behavioral Tweak</span>
+          </div>
+
+          <div class="simulator-box">
+            <div class="form-group">
+              <label>Select Appliance to Simulate</label>
+              <select id="sim-appliance-select" class="form-select"></select>
+            </div>
+
+            <div class="slider-control-group mt-4">
+              <div class="slider-labels">
+                <span>Original Hours: <strong id="sim-orig-hours">10</strong> hrs/day</span>
+                <span>Simulated New Hours: <strong id="sim-new-hours-val" class="highlight-val">8</strong> hrs/day</span>
+              </div>
+              <input type="range" id="sim-hours-slider" min="0" max="24" step="0.5" value="8" class="form-range">
+            </div>
+
+            <div class="comparison-results-grid mt-6">
+              <div class="compare-card">
+                <span class="compare-title">Current Consumption</span>
+                <span class="compare-val" id="sim-res-orig-kwh">67.5 kWh</span>
+                <span class="compare-sub" id="sim-res-orig-cost">₹540 / month</span>
+              </div>
+              <div class="compare-arrow">➔</div>
+              <div class="compare-card highlight-sim">
+                <span class="compare-title">New Consumption</span>
+                <span class="compare-val" id="sim-res-new-kwh">54.0 kWh</span>
+                <span class="compare-sub" id="sim-res-new-cost">₹432 / month</span>
+              </div>
+              <div class="compare-arrow">=</div>
+              <div class="compare-card success-sim">
+                <span class="compare-title">Monthly Savings</span>
+                <span class="compare-val success-text" id="sim-res-saved-kwh">13.5 kWh</span>
+                <span class="compare-sub success-text" id="sim-res-saved-cost">₹108 / month</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Appliance Upgrade / Retrofit Payback Calculator -->
+        <div class="panel-card">
+          <div class="panel-header">
+            <h3 class="panel-title">Energy-Efficient Retrofit Payback (ROI)</h3>
+            <span class="panel-tag">Capital Investment</span>
+          </div>
+
+          <form id="form-retrofit-calc" class="standard-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label>Existing Wattage (W)</label>
+                <input type="number" id="roi-old-w" class="form-input" value="75" required>
+              </div>
+              <div class="form-group">
+                <label>5-Star / BLDC Wattage (W)</label>
+                <input type="number" id="roi-new-w" class="form-input" value="28" required>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Quantity of Units</label>
+                <input type="number" id="roi-qty" class="form-input" value="3" required>
+              </div>
+              <div class="form-group">
+                <label>Operating Hours / Day</label>
+                <input type="number" id="roi-hours" class="form-input" value="10" required>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Total Replacement Cost (₹)</label>
+                <input type="number" id="roi-cost" class="form-input" value="7200" required>
+                <small class="form-hint">e.g. ₹2,400 x 3 BLDC fans</small>
+              </div>
+              <div class="form-group">
+                <label>Marginal Tariff (₹/unit)</label>
+                <input type="number" step="0.1" id="roi-tariff" class="form-input" value="8.0" required>
+              </div>
+            </div>
+
+            <button type="button" id="btn-run-roi" class="btn btn-secondary w-full">📊 Calculate Payback Period</button>
+          </form>
+
+          <div class="roi-results-badge mt-4" id="roi-results-display">
+            <div class="roi-item">
+              <span class="label">Monthly Energy Saved</span>
+              <strong class="val" id="roi-res-energy">42.3 kWh</strong>
+            </div>
+            <div class="roi-item">
+              <span class="label">Monthly Cost Saved</span>
+              <strong class="val success-text" id="roi-res-savings">₹338.40</strong>
+            </div>
+            <div class="roi-item">
+              <span class="label">Estimated Payback Period</span>
+              <strong class="val highlight-val" id="roi-res-payback">21.3 Months</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- SCREEN 5: AUDIT REPORT & EXPORT            -->
+    <!-- ========================================== -->
+    <section id="screen-report" class="screen-panel">
+      <div class="screen-header no-print">
+        <div>
+          <h2 class="screen-title">Personalized Energy Audit Report</h2>
+          <p class="screen-subtitle">Exportable comprehensive audit report with mathematical validations and action checklists.</p>
+        </div>
+        <div class="header-actions">
+          <button class="btn btn-primary" onclick="window.print()">🖨️ Print / Save as PDF</button>
+        </div>
+      </div>
+
+      <!-- Printable Report Document Shell -->
+      <div class="printable-report-card" id="printable-report">
+        <div class="report-header-banner">
+          <div>
+            <h1 class="report-main-title">Urja<span>Audit</span> Summary Report</h1>
+            <p class="report-meta-sub">Electricity Savings & Energy Efficiency Audit</p>
+          </div>
+          <div class="report-discom-badge">
+            <p><strong>Discom:</strong> SBPDCL / NBPDCL Bihar</p>
+            <p><strong>Sanctioned Load:</strong> 2.0 kW</p>
+            <p id="report-date-string">Date: October 2024</p>
+          </div>
+        </div>
+
+        <hr class="report-divider">
+
+        <!-- Executive Summary -->
+        <div class="report-section">
+          <h3 class="report-sec-heading">1. Executive Summary & Consumption Reconciliation</h3>
+          <div class="report-kpi-row">
+            <div class="rep-box">
+              <span class="rep-lbl">Actual Metered</span>
+              <span class="rep-val" id="rep-actual-kwh">145.0 kWh</span>
+              <span class="rep-sub" id="rep-actual-cost">₹1,160.00</span>
+            </div>
+            <div class="rep-box">
+              <span class="rep-lbl">Calculated Load</span>
+              <span class="rep-val" id="rep-calc-kwh">123.6 kWh</span>
+              <span class="rep-sub" id="rep-calc-cost">₹988.80</span>
+            </div>
+            <div class="rep-box">
+              <span class="rep-lbl">Unexplained Drain</span>
+              <span class="rep-val warning-text" id="rep-drain-kwh">21.4 kWh</span>
+              <span class="rep-sub" id="rep-drain-cost">₹171.20/mo</span>
+            </div>
+            <div class="rep-box">
+              <span class="rep-lbl">Identified Savings</span>
+              <span class="rep-val success-text" id="rep-savings-kwh">₹446.40</span>
+              <span class="rep-sub">Per Month</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Appliance Audit Table in Report -->
+        <div class="report-section">
+          <h3 class="report-sec-heading">2. Detailed Appliance Inventory & Load Breakdown</h3>
+          <table class="report-table">
+            <thead>
+              <tr>
+                <th>Appliance</th>
+                <th>Category</th>
+                <th>Qty</th>
+                <th>Power</th>
+                <th>Hours/Day</th>
+                <th>Monthly kWh</th>
+                <th>% Load</th>
+                <th>Cost/mo</th>
+              </tr>
+            </thead>
+            <tbody id="report-appliances-tbody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Actionable Recommendations in Report -->
+        <div class="report-section">
+          <h3 class="report-sec-heading">3. Priority Action Plan & Retrofit Roadmap</h3>
+          <div id="report-recommendations-list" class="report-rec-list">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <!-- Signoff Footer -->
+        <div class="report-footer-meta">
+          <p>Generated by <strong>UrjaAudit Assistant</strong>. Calculations strictly follow Discom tariff structures and BEE guidelines.</p>
+          <p><em>Formula: Daily Energy (kWh) = (Power in Watts × Quantity × Daily Hours) / 1000</em></p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="js/charts.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
