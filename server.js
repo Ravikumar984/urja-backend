@@ -197,12 +197,17 @@ app.get('/api/audit-summary/:sessionId', async (req, res) => {
         : 0;
     });
 
+    // NULL-SAFE BILLING CALCULATIONS
     const calculatedBillTariff = calculateTariffCost(totalCalculatedMonthlyKwh, slabs, session.sanctioned_load_kw);
-    const actualUnits = billRecord ? billRecord.actual_units_kwh : totalCalculatedMonthlyKwh;
+    
+    const actualUnits = (billRecord && billRecord.actual_units_kwh !== null) 
+      ? Number(billRecord.actual_units_kwh) 
+      : totalCalculatedMonthlyKwh;
+      
     const actualBillTariff = calculateTariffCost(actualUnits, slabs, session.sanctioned_load_kw);
 
     const unaccountedUnits = Number(Math.max(0, actualUnits - totalCalculatedMonthlyKwh).toFixed(2));
-    const unaccountedCost = Number((unaccountedUnits * calculatedBillTariff.marginalRatePerUnit).toFixed(2));
+    const unaccountedCost = Number((unaccountedUnits * (calculatedBillTariff.marginalRatePerUnit || 0)).toFixed(2));
 
     const recommendations = generateAuditRecommendations({
       appliances: enrichedAppliances,
@@ -212,6 +217,10 @@ app.get('/api/audit-summary/:sessionId', async (req, res) => {
     });
 
     const totalPotentialSavingsMonthly = recommendations.reduce((sum, r) => sum + (r.estimatedMonthlySavings || 0), 0);
+    
+    const finalActualBillAmount = (billRecord && billRecord.actual_bill_amount !== null) 
+      ? Number(billRecord.actual_bill_amount) 
+      : actualBillTariff.totalEstimatedBill;
 
     res.json({
       session,
@@ -219,13 +228,13 @@ app.get('/api/audit-summary/:sessionId', async (req, res) => {
         totalCalculatedDailyKwh: Number(totalCalculatedDailyKwh.toFixed(3)),
         totalCalculatedMonthlyKwh: Number(totalCalculatedMonthlyKwh.toFixed(2)),
         actualUnitsKwh: actualUnits,
-        actualBillAmount: billRecord ? billRecord.actual_bill_amount : actualBillTariff.totalEstimatedBill,
-        estimatedCalculatedBill: calculatedBillTariff.totalEstimatedBill,
+        actualBillAmount: finalActualBillAmount || 0,
+        estimatedCalculatedBill: calculatedBillTariff.totalEstimatedBill || 0,
         unaccountedUnits,
         unaccountedCost,
         totalPotentialSavingsMonthly: Number(totalPotentialSavingsMonthly.toFixed(2)),
-        marginalRate: calculatedBillTariff.marginalRatePerUnit,
-        averageRate: calculatedBillTariff.averageRatePerUnit
+        marginalRate: calculatedBillTariff.marginalRatePerUnit || 0,
+        averageRate: calculatedBillTariff.averageRatePerUnit || 0
       },
       tariffDetails: calculatedBillTariff,
       applianceBreakdown,
