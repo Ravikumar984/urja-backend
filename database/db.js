@@ -1,22 +1,15 @@
-const Database = require('better-sqlite3');
-const path = require('path');
-const fs = require('fs');
+const mysql = require('mysql2');
+require('dotenv').config();
 
-const dbPath = path.resolve(__dirname, 'urja_audit.db');
-const db = new Database(dbPath);
+const pool = mysql.createPool({
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+});
 
-// Enable Foreign Key constraints
-db.pragma('foreign_keys = ON');
-
-// Initialize schema if tables do not exist
-function initDatabase() {
-  const schemaPath = path.resolve(__dirname, 'schema.sql');
-  const schemaSql = fs.readFileSync(schemaPath, 'utf8');
-
-  // Execute schema batch
-  db.exec(schemaSql);
-}
-
-initDatabase();
-
-module.exports = db;
+module.exports = pool.promise();
