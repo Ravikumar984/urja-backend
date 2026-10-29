@@ -170,8 +170,8 @@ app.get('/api/audit-summary/:sessionId', async (req, res) => {
 
     const enrichedAppliances = appliances.map(app => {
       const calc = calculateApplianceEnergy(app);
-      totalCalculatedDailyKwh += calc.totalDailyKwh;
-      totalCalculatedMonthlyKwh += calc.monthlyKwh;
+      totalCalculatedDailyKwh += (calc.totalDailyKwh || 0);
+      totalCalculatedMonthlyKwh += (calc.monthlyKwh || 0);
       return { ...app, ...calc };
     });
 
@@ -180,14 +180,14 @@ app.get('/api/audit-summary/:sessionId', async (req, res) => {
       percentageShare: totalCalculatedMonthlyKwh > 0 
         ? Number(((app.monthlyKwh / totalCalculatedMonthlyKwh) * 100).toFixed(1))
         : 0
-    })).sort((a, b) => b.monthlyKwh - a.monthlyKwh);
+    })).sort((a, b) => (b.monthlyKwh || 0) - (a.monthlyKwh || 0));
 
     const categoryBreakdown = {};
     applianceBreakdown.forEach(app => {
       if (!categoryBreakdown[app.category]) {
         categoryBreakdown[app.category] = { category: app.category, monthlyKwh: 0, percentage: 0 };
       }
-      categoryBreakdown[app.category].monthlyKwh += app.monthlyKwh;
+      categoryBreakdown[app.category].monthlyKwh += (app.monthlyKwh || 0);
     });
 
     Object.keys(categoryBreakdown).forEach(cat => {
@@ -197,46 +197,64 @@ app.get('/api/audit-summary/:sessionId', async (req, res) => {
         : 0;
     });
 
-    // NULL-SAFE BILLING CALCULATIONS
-    const calculatedBillTariff = calculateTariffCost(totalCalculatedMonthlyKwh, slabs, session.sanctioned_load_kw);
+    // STRICTLY SANITIZED BILLING CALCULATIONS
+    const calculatedBillTariff = calculateTariffCost(totalCalculatedMonthlyKwh, slabs, session.sanctioned_load_kw) || {};
     
-    const actualUnits = (billRecord && billRecord.actual_units_kwh !== null) 
+    const actualUnits = (billRecord && billRecord.actual_units_kwh != null) 
       ? Number(billRecord.actual_units_kwh) 
       : totalCalculatedMonthlyKwh;
       
-    const actualBillTariff = calculateTariffCost(actualUnits, slabs, session.sanctioned_load_kw);
+    const actualBillTariff = calculateTariffCost(actualUnits, slabs, session.sanctioned_load_kw) || {};
 
     const unaccountedUnits = Number(Math.max(0, actualUnits - totalCalculatedMonthlyKwh).toFixed(2));
     const unaccountedCost = Number((unaccountedUnits * (calculatedBillTariff.marginalRatePerUnit || 0)).toFixed(2));
 
-    const recommendations = generateAuditRecommendations({
+    const rawRecommendations = generateAuditRecommendations({
       appliances: enrichedAppliances,
       billRecord,
       tariffBreakdown: calculatedBillTariff,
       calculatedTotalUnits: totalCalculatedMonthlyKwh
-    });
+    }) || [];
 
-    const totalPotentialSavingsMonthly = recommendations.reduce((sum, r) => sum + (r.estimatedMonthlySavings || 0), 0);
+    // Ensure no missing savings properties crash the frontend UI
+    const recommendations = rawRecommendations.map(rec => ({
+      ...rec,
+      estimatedMonthlySavings: Number(rec.estimatedMonthlySavings || 0)
+    }));
+
+    const totalPotentialSavingsMonthly = recommendations.reduce((sum, r) => sum + r.estimatedMonthlySavings, 0);
     
-    const finalActualBillAmount = (billRecord && billRecord.actual_bill_amount !== null) 
+    const finalActualBillAmount = (billRecord && billRecord.actual_bill_amount != null) 
       ? Number(billRecord.actual_bill_amount) 
-      : actualBillTariff.totalEstimatedBill;
+      : (actualBillTariff.totalEstimatedBill || 0);
 
     res.json({
       session,
       metrics: {
-        totalCalculatedDailyKwh: Number(totalCalculatedDailyKwh.toFixed(3)),
-        totalCalculatedMonthlyKwh: Number(totalCalculatedMonthlyKwh.toFixed(2)),
-        actualUnitsKwh: actualUnits,
-        actualBillAmount: finalActualBillAmount || 0,
-        estimatedCalculatedBill: calculatedBillTariff.totalEstimatedBill || 0,
-        unaccountedUnits,
-        unaccountedCost,
-        totalPotentialSavingsMonthly: Number(totalPotentialSavingsMonthly.toFixed(2)),
-        marginalRate: calculatedBillTariff.marginalRatePerUnit || 0,
-        averageRate: calculatedBillTariff.averageRatePerUnit || 0
+        totalCalculatedDailyKwh: Number(totalCalculatedDailyKwh || 0),
+        totalCalculatedMonthlyKwh: Number(totalCalculatedMonthlyKwh || 0),
+        actualUnitsKwh: Number(actualUnits || 0),
+        actualBillAmount: Number(finalActualBillAmount || 0),
+        estimatedCalculatedBill: Number(calculatedBillTariff.totalEstimatedBill || 0),
+        unaccountedUnits: Number(unaccountedUnits || 0),
+        unaccountedCost: Number(unaccountedCost || 0),
+        totalPotentialSavingsMonthly: Number(totalPotentialSavingsMonthly || 0),
+        marginalRate: Number(calculatedBillTariff.marginalRatePerUnit || 0),
+        averageRate: Number(calculatedBillTariff.averageRatePerUnit || 0)
       },
-      tariffDetails: calculatedBillTariff,
+      tariffDetails: {
+        ...calculatedBillTariff,
+        energyCharges: Number(calculatedBillTariff.energyCharges || 0),
+        fixedCharges: Number(calculatedBillTariff.fixedCharges || 0),
+        electricityDuty: Number(calculatedBillTariff.electricityDuty || 0),
+        totalEstimatedBill: Number(calculatedBillTariff.totalEstimatedBill || 0),
+        slabBreakdown: (calculatedBillTariff.slabBreakdown || []).map(slab => ({
+          ...slab,
+          rate: Number(slab.rate || 0),
+          units: Number(slab.units || 0),
+          cost: Number(slab.cost || 0)
+        }))
+      },
       applianceBreakdown,
       categoryBreakdown: Object.values(categoryBreakdown),
       recommendations
